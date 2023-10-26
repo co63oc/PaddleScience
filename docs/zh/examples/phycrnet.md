@@ -37,7 +37,8 @@ PhyCRNet 参数 input_channels 是输入通道数，hidden_channels 是隐藏层
 运行本问题代码前请按照下方命令生成数据集
 
 ``` shell
-python burgers_data.py
+python Burgers_2d_solver_HighOrder.py
+python FN_2d_solver_HighOrder.py
 ```
 
 本案例涉及读取数据构建，如下所示
@@ -70,7 +71,7 @@ examples/phycrnet/main.py:216:230
 
 ### 3.5 超参数设定
 
-接下来我们需要指定训练轮数，此处我们按实验经验，使用 200 轮训练轮数。
+接下来我们需要指定训练轮数，此处我们按实验经验，使用 2000 轮训练轮数。
 
 ``` py linenums="143"
 --8<--
@@ -89,6 +90,14 @@ examples/phycrnet/main.py:242:242
 ```
 
 ### 3.7 模型训练与评估
+
+为了评估所有基于神经网络的求解器产生的解决方案精度，我们分两个阶段评估了全场误差传播：训练和外推。在时刻 τ 的全场误差 $\epsilon_\tau$ 的定义为给定 b 的累积均方根误差 (a-RMSE)。
+
+$$
+\epsilon_\tau=\sqrt{\frac{1}{N_\tau} \sum_{k=1}^{N_\tau} \frac{\left\|\mathbf{u}^*\left(\mathbf{x}, t_k\right)-\mathbf{u}^\theta\left(\mathbf{x}, t_k\right)\right\|_2^2}{m n}}
+$$
+
+其中，$N_\tau$ 是 $[0, \tau]$ 内的总时间步数，$\mathbf{u}^*\left(\mathbf{x}, t_k\right)$ 为参考解决方案。
 
 完成上述设置之后，只需要将上述实例化的对象按顺序传递给 `ppsci.solver.Solver`。
 

@@ -203,7 +203,7 @@ if __name__ == "__main__":
     # initialize logger
     logger.init_logger("ppsci", f"{OUTPUT_DIR}/train.log", "info")
     # set training hyper-parameters
-    EPOCHS = 200 if not args.epochs else args.epochs
+    EPOCHS = 2000 if not args.epochs else args.epochs
 
     # set initial states for convlstm
     num_convlstm = 1
@@ -317,7 +317,7 @@ if __name__ == "__main__":
     )
 
     # Used to set whether the graph is generated
-    graph = True
+    graph = False
 
     if not graph:
         # train model

@@ -12,6 +12,8 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from typing import Tuple
+
 import numpy as np
 import paddle
 import paddle.nn as nn
@@ -74,15 +76,15 @@ class PhyCRNet(base.Arch):
 
     Args:
         input_channels (int): The input channels.
-        hidden_channels (List[int]): The hidden channels.
-        input_kernel_size (List[int]):  The input kernel size.
-        input_stride (List[int]): The input stride.
-        input_padding (List[int]): The input padding.
+        hidden_channels (Tuple[int]): The hidden channels.
+        input_kernel_size (Tuple[int]):  The input kernel size.
+        input_stride (Tuple[int]): The input stride.
+        input_padding (Tuple[int]): The input padding.
         dt (float): The dt parameter.
-        num_layers (List[int]): The number of layers.
+        num_layers (Tuple[int]): The number of layers.
         upscale_factor (int): The upscale factor.
         step (int, optional): The step. Defaults to 1.
-        effective_step (list, optional): The effective step. Defaults to [1].
+        effective_step (Tuple[int], optional): The effective step. Defaults to (1).
 
     Examples:
         >>> import ppsci
@@ -100,16 +102,16 @@ class PhyCRNet(base.Arch):
 
     def __init__(
         self,
-        input_channels,
-        hidden_channels,
-        input_kernel_size,
-        input_stride,
-        input_padding,
-        dt,
-        num_layers,
-        upscale_factor,
-        step=1,
-        effective_step=[1],
+        input_channels: int,
+        hidden_channels: Tuple[int],
+        input_kernel_size: Tuple[int],
+        input_stride: Tuple[int],
+        input_padding: Tuple[int],
+        dt: float,
+        num_layers: Tuple[int],
+        upscale_factor: int,
+        step: int = 1,
+        effective_step: Tuple[int] = (1),
     ):
         super(PhyCRNet, self).__init__()
 
@@ -235,16 +237,18 @@ class ConvLSTMCell(nn.Layer):
         input_kernel_size,
         input_stride,
         input_padding,
+        hidden_kernel_size=3,
+        num_features=4,
     ):
         super(ConvLSTMCell, self).__init__()
 
         self.input_channels = input_channels
         self.hidden_channels = hidden_channels
-        self.hidden_kernel_size = 3
+        self.hidden_kernel_size = hidden_kernel_size  # Page 9
         self.input_kernel_size = input_kernel_size
         self.input_stride = input_stride
         self.input_padding = input_padding
-        self.num_features = 4
+        self.num_features = num_features  # Page 10
 
         # padding for hidden state
         self.padding = int((self.hidden_kernel_size - 1) / 2)
@@ -466,7 +470,7 @@ class Conv1DDerivative(nn.Layer):
 class loss_generator(nn.Layer):
     """Loss generator for physics loss"""
 
-    def __init__(self, dt=(10.0 / 200), dx=(20.0 / 128)):
+    def __init__(self, dt, dx):
         """Construct the derivatives, X = Width, Y = Height"""
         super(loss_generator, self).__init__()
 
