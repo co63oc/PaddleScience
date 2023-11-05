@@ -40,11 +40,9 @@ def train(cfg: DictConfig):
     num_convlstm = 1
     (h0, c0) = (paddle.randn((1, 128, 16, 16)), paddle.randn((1, 128, 16, 16)))
     initial_state = []
-    for i in range(num_convlstm):
+    for _ in range(num_convlstm):
         initial_state.append((h0, c0))
 
-    global num_time_batch
-    global uv, dt, dx
     # grid parameters
     time_steps = cfg.TIME_STEPS
     dx = cfg.DX[0] / cfg.DX[1]
@@ -52,6 +50,10 @@ def train(cfg: DictConfig):
     steps = cfg.TIME_BATCH_SIZE + 1
     effective_step = list(range(0, steps))
     num_time_batch = int(time_steps / cfg.TIME_BATCH_SIZE)
+
+    functions.dt = cfg.DT
+    functions.dx = dx
+    functions.num_time_batch = num_time_batch
     model = ppsci.arch.PhyCRNet(
         dt=cfg.DT, step=steps, effective_step=effective_step, **cfg.MODEL
     )
@@ -65,13 +67,11 @@ def train(cfg: DictConfig):
     # use Burgers_2d_solver_HighOrder.py to generate data
     data = scio.loadmat(cfg.DATA_PATH)
     uv = data["uv"]  # [t,c,h,w]
-
-    # initial condition
-    uv0 = uv[0:1, ...]
-    input = paddle.to_tensor(uv0, dtype=paddle.get_default_dtype())
-
-    initial_state = paddle.to_tensor(initial_state)
-    dataset_obj = functions.Dataset(initial_state, input)
+    functions.uv = uv
+    dataset_obj = functions.Dataset(
+        paddle.to_tensor(initial_state),
+        paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
+    )
     (
         input_dict_train,
         label_dict_train,
@@ -164,8 +164,6 @@ def evaluate(cfg: DictConfig):
     for i in range(num_convlstm):
         initial_state.append((h0, c0))
 
-    global num_time_batch
-    global uv, dt, dx
     # grid parameters
     time_steps = cfg.TIME_STEPS
     dx = cfg.DX[0] / cfg.DX[1]
@@ -173,6 +171,10 @@ def evaluate(cfg: DictConfig):
     steps = cfg.TIME_BATCH_SIZE + 1
     effective_step = list(range(0, steps))
     num_time_batch = int(time_steps / cfg.TIME_BATCH_SIZE)
+
+    functions.dt = cfg.DT
+    functions.dx = dx
+    functions.num_time_batch = num_time_batch
     model = ppsci.arch.PhyCRNet(
         dt=cfg.DT, step=steps, effective_step=effective_step, **cfg.MODEL
     )
@@ -186,13 +188,11 @@ def evaluate(cfg: DictConfig):
     # use Burgers_2d_solver_HighOrder.py to generate data
     data = scio.loadmat(cfg.DATA_PATH)
     uv = data["uv"]  # [t,c,h,w]
-
-    # initial condition
-    uv0 = uv[0:1, ...]
-    input = paddle.to_tensor(uv0, dtype=paddle.get_default_dtype())
-
-    initial_state = paddle.to_tensor(initial_state)
-    dataset_obj = functions.Dataset(initial_state, input)
+    functions.uv = uv
+    dataset_obj = functions.Dataset(
+        paddle.to_tensor(initial_state),
+        paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
+    )
     (
         _,
         _,
