@@ -205,6 +205,7 @@ if __name__ == "__main__":
     UV = np.transpose(UV, [1, 0, 2, 3])
 
     fig_save_dir = "./output/figures/2dFN/"
+    os.makedirs(fig_save_dir, exist_ok=True)
     for i in range(0, 81):
         postProcess(UV, 0, 128, 0, 128, num=10 * i, fig_save_dir=fig_save_dir)
 
