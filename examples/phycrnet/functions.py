@@ -67,7 +67,6 @@ def transform_out(input, out, model):
 
         # get loss
         loss = compute_loss(output, loss_func)
-        # loss.backward(retain_graph=True)
         batch_loss += loss
 
         # update the state and output for next batch
@@ -265,10 +264,6 @@ def compute_loss(output, loss_func):
     )
 
     return loss
-
-
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if not p.stop_gradient)
 
 
 def post_process(output, true, num):

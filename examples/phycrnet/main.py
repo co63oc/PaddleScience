@@ -67,16 +67,17 @@ def train(cfg: DictConfig):
     data = scio.loadmat(cfg.DATA_PATH)
     uv = data["uv"]  # [t,c,h,w]
     functions.uv = uv
-    dataset_obj = functions.Dataset(
-        paddle.to_tensor(initial_state),
-        paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
-    )
     (
         input_dict_train,
         label_dict_train,
         input_dict_val,
         label_dict_val,
-    ) = dataset_obj.get(200)
+    ) = functions.Dataset(
+        paddle.to_tensor(initial_state),
+        paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
+    ).get(
+        10
+    )
 
     sup_constraint_pde = ppsci.constraint.SupervisedConstraint(
         {
@@ -153,7 +154,7 @@ def evaluate(cfg: DictConfig):
     num_convlstm = 1
     (h0, c0) = (paddle.randn((1, 128, 16, 16)), paddle.randn((1, 128, 16, 16)))
     initial_state = []
-    for i in range(num_convlstm):
+    for _ in range(num_convlstm):
         initial_state.append((h0, c0))
 
     # grid parameters
@@ -181,11 +182,10 @@ def evaluate(cfg: DictConfig):
     data = scio.loadmat(cfg.DATA_PATH)
     uv = data["uv"]  # [t,c,h,w]
     functions.uv = uv
-    dataset_obj = functions.Dataset(
+    _, _, input_dict_val, _ = functions.Dataset(
         paddle.to_tensor(initial_state),
         paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
-    )
-    _, _, input_dict_val, _ = dataset_obj.get(200)
+    ).get(10)
     checkpoint_path = os.path.join(cfg.output_dir, "phycrnet.pdparams")
     layer_state_dict = paddle.load(checkpoint_path)
     model.set_state_dict(layer_state_dict)
