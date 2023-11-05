@@ -16,7 +16,7 @@
 PhyCRNet for solving spatiotemporal PDEs
 Reference: https://github.com/isds-neu/PhyCRNet/
 """
-
+import os
 from os import path as osp
 
 import functions
@@ -138,13 +138,9 @@ def train(cfg: DictConfig):
     solver.eval()
 
     # save the model
+    checkpoint_path = os.path.join(cfg.output_dir, "phycrnet.pdparams")
     layer_state_dict = model.state_dict()
-    paddle.save(layer_state_dict, cfg.TRAIN.checkpoint_path)
-
-    layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
-    model.set_state_dict(layer_state_dict)
-    model.register_output_transform(None)
-    functions.output_graph(model, input_dict_val, cfg.output_dir, time_steps)
+    paddle.save(layer_state_dict, checkpoint_path)
 
 
 def evaluate(cfg: DictConfig):
@@ -190,7 +186,8 @@ def evaluate(cfg: DictConfig):
         paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
     )
     _, _, input_dict_val, _ = dataset_obj.get(200)
-    layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
+    checkpoint_path = os.path.join(cfg.output_dir, "phycrnet.pdparams")
+    layer_state_dict = paddle.load(checkpoint_path)
     model.set_state_dict(layer_state_dict)
     model.register_output_transform(None)
     functions.output_graph(model, input_dict_val, cfg.output_dir, cfg.TIME_STEPS)

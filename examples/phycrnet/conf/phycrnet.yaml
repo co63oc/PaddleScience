@@ -54,7 +54,7 @@ TRAIN:
   save_freq: 50
   eval_with_no_grad: true
   pretrained_model_path: null
-  checkpoint_path: output/phycrnet.pdparams
+  checkpoint_path: null
 
 # evaluation settings
 EVAL:
