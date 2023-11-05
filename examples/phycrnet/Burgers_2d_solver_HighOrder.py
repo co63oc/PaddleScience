@@ -263,7 +263,7 @@ if __name__ == "__main__":
         postProcess(UV, M, 0, M, 0, M, 50 * i, fig_save_dir)
 
     # save data
-    data_save_dir = "./output/"
+    data_save_dir = "./datasets/"
     os.makedirs(data_save_dir, exist_ok=True)
     scipy.io.savemat(
         os.path.join(data_save_dir, "burgers_1501x2x128x128.mat"), {"uv": UV}

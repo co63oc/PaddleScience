@@ -86,6 +86,8 @@ def train(cfg: DictConfig):
                 "input": input_dict_train,
                 "label": label_dict_train,
             },
+            "batch_size": 1,
+            "num_workers": 0,
         },
         ppsci.loss.FunctionalLoss(functions.train_loss_func),
         {
@@ -102,6 +104,8 @@ def train(cfg: DictConfig):
                 "input": input_dict_val,
                 "label": label_dict_val,
             },
+            "batch_size": 1,
+            "num_workers": 0,
         },
         ppsci.loss.FunctionalLoss(functions.val_loss_func),
         {

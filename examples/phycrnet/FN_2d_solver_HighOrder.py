@@ -2,6 +2,8 @@
 # spatial diff: 4th order laplacian
 # temporal diff: O(dt^5) due to RK4
 
+import os
+
 import matplotlib.pyplot as plt
 import numpy as np
 import scipy.io
@@ -207,5 +209,6 @@ if __name__ == "__main__":
         postProcess(UV, 0, 128, 0, 128, num=10 * i, fig_save_dir=fig_save_dir)
 
     # save data
-    data_save_dir = "./output/"
-    scipy.io.savemat(data_save_dir + "FN_1001x2x128x128.mat", {"uv": UV})
+    data_save_dir = "./datasets/"
+    os.makedirs(data_save_dir, exist_ok=True)
+    scipy.io.savemat(os.path.join(data_save_dir, "FN_1001x2x128x128.mat"), {"uv": UV})
