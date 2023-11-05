@@ -1,5 +1,21 @@
 # PhyCRNet
 
+=== "模型训练命令"
+
+    ``` sh
+    # linux
+    python Burgers_2d_solver_HighOrder.py
+    python main.py
+    ```
+
+=== "模型评估命令"
+
+    ``` sh
+    # linux
+    python Burgers_2d_solver_HighOrder.py
+    python main.py mode=eval EVAL.pretrained_model_path=https://paddle-org.bj.bcebos.com/paddlescience/models/phycrnet/phycrnet_pretrained.pdparams
+    ```
+
 ## 1. 背景简介
 
 复杂时空系统通常可以通过偏微分方程（PDE）来建模，它们在许多领域都十分常见，如应用数学、物理学、生物学、化学和工程学。求解PDE系统一直是科学计算领域的一个关键组成部分。

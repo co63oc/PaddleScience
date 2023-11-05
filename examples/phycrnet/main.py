@@ -16,24 +16,25 @@
 PhyCRNet for solving spatiotemporal PDEs
 Reference: https://github.com/isds-neu/PhyCRNet/
 """
+
+import os
+from os import path as osp
+
 import functions
+import hydra
 import paddle
 import scipy.io as scio
+from omegaconf import DictConfig
 
 import ppsci
-from ppsci.utils import config
 from ppsci.utils import logger
 
-if __name__ == "__main__":
-    args = config.parse_args()
+
+def train(cfg: DictConfig):
     # set random seed for reproducibility
-    ppsci.utils.misc.set_random_seed(5)
-    # set output directory
-    OUTPUT_DIR = "./output_PhyCRNet" if not args.output_dir else args.output_dir
+    ppsci.utils.misc.set_random_seed(cfg.seed)
     # initialize logger
-    logger.init_logger("ppsci", f"{OUTPUT_DIR}/train.log", "info")
-    # set training hyper-parameters
-    EPOCHS = 2000 if not args.epochs else args.epochs
+    logger.init_logger("ppsci", osp.join(cfg.output_dir, f"{cfg.mode}.log"), "info")
 
     # set initial states for convlstm
     num_convlstm = 1
@@ -45,25 +46,14 @@ if __name__ == "__main__":
     global num_time_batch
     global uv, dt, dx
     # grid parameters
-    time_steps = 1001
-    dt = 0.002
-    dx = 1.0 / 128
+    time_steps = cfg.TIME_STEPS
+    dx = cfg.DX[0] / cfg.DX[1]
 
-    time_batch_size = 1000
-    steps = time_batch_size + 1
+    steps = cfg.TIME_BATCH_SIZE + 1
     effective_step = list(range(0, steps))
-    num_time_batch = int(time_steps / time_batch_size)
+    num_time_batch = int(time_steps / cfg.TIME_BATCH_SIZE)
     model = ppsci.arch.PhyCRNet(
-        input_channels=2,
-        hidden_channels=[8, 32, 128, 128],
-        input_kernel_size=[4, 4, 4, 3],
-        input_stride=[2, 2, 2, 1],
-        input_padding=[1, 1, 1, 1],
-        dt=dt,
-        num_layers=[3, 1],
-        upscale_factor=8,
-        step=steps,
-        effective_step=effective_step,
+        dt=cfg.DT, step=steps, effective_step=effective_step, **cfg.MODEL
     )
 
     def _transform_out(_in, _out):
@@ -72,9 +62,8 @@ if __name__ == "__main__":
     model.register_input_transform(functions.transform_in)
     model.register_output_transform(_transform_out)
 
-    # use burgers_data.py to generate data
-    data_file = "./output/burgers_1501x2x128x128.mat"
-    data = scio.loadmat(data_file)
+    # use Burgers_2d_solver_HighOrder.py to generate data
+    data = scio.loadmat(cfg.DATA_PATH)
     uv = data["uv"]  # [t,c,h,w]
 
     # initial condition
@@ -124,48 +113,107 @@ if __name__ == "__main__":
     validator_pde = {sup_validator_pde.name: sup_validator_pde}
 
     # initialize solver
-    ITERS_PER_EPOCH = 1
-    scheduler = ppsci.optimizer.lr_scheduler.Step(
-        epochs=EPOCHS,
-        iters_per_epoch=ITERS_PER_EPOCH,
-        step_size=100,
-        gamma=0.97,
-        learning_rate=1e-4,
-    )()
+    scheduler = ppsci.optimizer.lr_scheduler.Step(**cfg.TRAIN.lr_scheduler)()
     optimizer = ppsci.optimizer.Adam(scheduler)(model)
     solver = ppsci.solver.Solver(
         model,
         constraint_pde,
-        OUTPUT_DIR,
+        cfg.output_dir,
         optimizer,
         scheduler,
-        EPOCHS,
-        ITERS_PER_EPOCH,
-        save_freq=50,
+        cfg.TRAIN.epochs,
+        cfg.TRAIN.iters_per_epoch,
+        save_freq=cfg.TRAIN.save_freq,
         validator=validator_pde,
-        eval_with_no_grad=True,
+        eval_with_no_grad=cfg.TRAIN.eval_with_no_grad,
     )
 
-    # Used to set whether the graph is generated
-    graph = False
+    # train model
+    solver.train()
+    # evaluate after finished training
+    model.register_output_transform(functions.tranform_output_val)
+    solver.eval()
 
-    if not graph:
-        # train model
-        solver.train()
-        # evaluate after finished training
-        model.register_output_transform(functions.tranform_output_val)
-        solver.eval()
+    # save the model
+    layer_state_dict = model.state_dict()
+    paddle.save(layer_state_dict, cfg.TRAIN.checkpoint_path)
 
-        # save the model
-        layer_state_dict = model.state_dict()
-        paddle.save(layer_state_dict, "output/phycrnet.pdparams")
+    fig_save_path = cfg.output_dir
+    if not os.path.exists(fig_save_path):
+        os.makedirs(fig_save_path, True)
+    layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
+    model.set_state_dict(layer_state_dict)
+    model.register_output_transform(None)
+    functions.output_graph(model, input_dict_val, fig_save_path, time_steps)
+
+
+def evaluate(cfg: DictConfig):
+    # set random seed for reproducibility
+    ppsci.utils.misc.set_random_seed(cfg.seed)
+    # initialize logger
+    logger.init_logger("ppsci", osp.join(cfg.output_dir, f"{cfg.mode}.log"), "info")
+
+    # set initial states for convlstm
+    num_convlstm = 1
+    (h0, c0) = (paddle.randn((1, 128, 16, 16)), paddle.randn((1, 128, 16, 16)))
+    initial_state = []
+    for i in range(num_convlstm):
+        initial_state.append((h0, c0))
+
+    global num_time_batch
+    global uv, dt, dx
+    # grid parameters
+    time_steps = cfg.TIME_STEPS
+    dx = cfg.DX[0] / cfg.DX[1]
+
+    steps = cfg.TIME_BATCH_SIZE + 1
+    effective_step = list(range(0, steps))
+    num_time_batch = int(time_steps / cfg.TIME_BATCH_SIZE)
+    model = ppsci.arch.PhyCRNet(
+        dt=cfg.DT, step=steps, effective_step=effective_step, **cfg.MODEL
+    )
+
+    def _transform_out(_in, _out):
+        return functions.transform_out(_in, _out, model)
+
+    model.register_input_transform(functions.transform_in)
+    model.register_output_transform(_transform_out)
+
+    # use Burgers_2d_solver_HighOrder.py to generate data
+    data = scio.loadmat(cfg.DATA_PATH)
+    uv = data["uv"]  # [t,c,h,w]
+
+    # initial condition
+    uv0 = uv[0:1, ...]
+    input = paddle.to_tensor(uv0, dtype=paddle.get_default_dtype())
+
+    initial_state = paddle.to_tensor(initial_state)
+    dataset_obj = functions.Dataset(initial_state, input)
+    (
+        _,
+        _,
+        input_dict_val,
+        _,
+    ) = dataset_obj.get(200)
+
+    fig_save_path = cfg.output_dir
+    if not os.path.exists(fig_save_path):
+        os.makedirs(fig_save_path, True)
+    layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
+    model.set_state_dict(layer_state_dict)
+    model.register_output_transform(None)
+    functions.output_graph(model, input_dict_val, fig_save_path, cfg.TIME_STEPS)
+
+
+@hydra.main(version_base=None, config_path="./conf", config_name="phycrnet.yaml")
+def main(cfg: DictConfig):
+    if cfg.mode == "train":
+        train(cfg)
+    elif cfg.mode == "eval":
+        evaluate(cfg)
     else:
-        import os
+        raise ValueError(f"cfg.mode should in ['train', 'eval'], but got '{cfg.mode}'")
 
-        fig_save_path = "output/figures/"
-        if not os.path.exists(fig_save_path):
-            os.makedirs(fig_save_path, True)
-        layer_state_dict = paddle.load("output/phycrnet.pdparams")
-        model.set_state_dict(layer_state_dict)
-        model.register_output_transform(None)
-        functions.output_graph(model, input_dict_val, fig_save_path, time_steps)
+
+if __name__ == "__main__":
+    main()
