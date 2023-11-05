@@ -17,7 +17,6 @@ PhyCRNet for solving spatiotemporal PDEs
 Reference: https://github.com/isds-neu/PhyCRNet/
 """
 
-import os
 from os import path as osp
 
 import functions
@@ -142,13 +141,10 @@ def train(cfg: DictConfig):
     layer_state_dict = model.state_dict()
     paddle.save(layer_state_dict, cfg.TRAIN.checkpoint_path)
 
-    fig_save_path = cfg.output_dir
-    if not os.path.exists(fig_save_path):
-        os.makedirs(fig_save_path, True)
     layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
     model.set_state_dict(layer_state_dict)
     model.register_output_transform(None)
-    functions.output_graph(model, input_dict_val, fig_save_path, time_steps)
+    functions.output_graph(model, input_dict_val, cfg.output_dir, time_steps)
 
 
 def evaluate(cfg: DictConfig):
@@ -193,20 +189,11 @@ def evaluate(cfg: DictConfig):
         paddle.to_tensor(initial_state),
         paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
     )
-    (
-        _,
-        _,
-        input_dict_val,
-        _,
-    ) = dataset_obj.get(200)
-
-    fig_save_path = cfg.output_dir
-    if not os.path.exists(fig_save_path):
-        os.makedirs(fig_save_path, True)
+    _, _, input_dict_val, _ = dataset_obj.get(200)
     layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
     model.set_state_dict(layer_state_dict)
     model.register_output_transform(None)
-    functions.output_graph(model, input_dict_val, fig_save_path, cfg.TIME_STEPS)
+    functions.output_graph(model, input_dict_val, cfg.output_dir, cfg.TIME_STEPS)
 
 
 @hydra.main(version_base=None, config_path="./conf", config_name="phycrnet.yaml")
