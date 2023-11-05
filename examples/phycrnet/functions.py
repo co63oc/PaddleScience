@@ -15,9 +15,116 @@
 import math
 from typing import Dict
 
+import matplotlib.pyplot as plt
 import numpy as np
 import paddle
 import paddle.nn as nn
+
+from ppsci.arch import phycrnet
+
+
+# transform
+def transform_in(input):
+    shape = input["initial_state_shape"][0]
+    input_transformed = {
+        "initial_state": input["initial_state"][0].reshape(shape.tolist()),
+        "input": input["input"][0],
+    }
+    return input_transformed
+
+
+def transform_out(input, out, model):
+    # Stop the transform.
+    model.enable_transform = False
+    global dt, dx
+    global num_time_batch
+
+    loss_func = phycrnet.loss_generator(dt, dx)
+    batch_loss = 0
+    state_detached = []
+    prev_output = []
+    for time_batch_id in range(num_time_batch):
+        # update the first input for each time batch
+        if time_batch_id == 0:
+            hidden_state = input["initial_state"]
+            u0 = input["input"]
+        else:
+            hidden_state = state_detached
+            u0 = prev_output[-2:-1].detach()  # second last output
+            out = model({"initial_state": hidden_state, "input": u0})
+
+        # output is a list
+        output = out["outputs"]
+        second_last_state = out["second_last_state"]
+
+        # [t, c, height (Y), width (X)]
+        output = paddle.concat(tuple(output), axis=0)
+
+        # concatenate the initial state to the output for central diff
+        output = paddle.concat((u0.cuda(), output), axis=0)
+
+        # get loss
+        loss = compute_loss(output, loss_func)
+        # loss.backward(retain_graph=True)
+        batch_loss += loss
+
+        # update the state and output for next batch
+        prev_output = output
+        state_detached = []
+        for i in range(len(second_last_state)):
+            (h, c) = second_last_state[i]
+            state_detached.append((h.detach(), c.detach()))  # hidden state
+
+    model.enable_transform = True
+    return {"loss": batch_loss}
+
+
+def tranform_output_val(input, out):
+    global uv
+    output = out["outputs"]
+    input = input["input"]
+
+    # shape: [t, c, h, w]
+    output = paddle.concat(tuple(output), axis=0)
+    output = paddle.concat((input.cuda(), output), axis=0)
+
+    # Padding x and y axis due to periodic boundary condition
+    output = paddle.concat((output[:, :, :, -1:], output, output[:, :, :, 0:2]), axis=3)
+    output = paddle.concat((output[:, :, -1:, :], output, output[:, :, 0:2, :]), axis=2)
+
+    # [t, c, h, w]
+    truth = uv[0:1001, :, :, :]
+
+    # [101, 2, 131, 131]
+    truth = np.concatenate((truth[:, :, :, -1:], truth, truth[:, :, :, 0:2]), axis=3)
+    truth = np.concatenate((truth[:, :, -1:, :], truth, truth[:, :, 0:2, :]), axis=2)
+
+    # post-process
+    ten_true = []
+    ten_pred = []
+    for i in range(0, 50):
+        u_star, u_pred, v_star, v_pred = post_process(
+            output,
+            truth,
+            num=20 * i,
+        )
+
+        ten_true.append([u_star, v_star])
+        ten_pred.append([u_pred, v_pred])
+
+    # compute the error
+    error = frobenius_norm(np.array(ten_pred) - np.array(ten_true)) / frobenius_norm(
+        np.array(ten_true)
+    )
+    return {"loss": paddle.to_tensor([error])}
+
+
+def train_loss_func(result_dict, *args) -> paddle.Tensor:
+    return result_dict["loss"]
+
+
+def val_loss_func(result_dict, *args) -> paddle.Tensor:
+    return result_dict["loss"]
 
 
 def metric_expr(output_dict, *args) -> Dict[str, paddle.Tensor]:
@@ -208,3 +315,63 @@ class Dataset:
                 label_dict_val["dummy_loss"].append(paddle.to_tensor(0.0))
 
         return input_dict_train, label_dict_train, input_dict_val, label_dict_val
+
+
+def output_graph(model, input_dataset, fig_save_path, time_steps):
+    output_dataset = model(input_dataset)
+    output = output_dataset["outputs"]
+    input = input_dataset["input"][0]
+
+    # shape: [t, c, h, w]
+    output = paddle.concat(tuple(output), axis=0)
+    output = paddle.concat((input.cuda(), output), axis=0)
+
+    # Padding x and y axis due to periodic boundary condition
+    output = paddle.concat((output[:, :, :, -1:], output, output[:, :, :, 0:2]), axis=3)
+    output = paddle.concat((output[:, :, -1:, :], output, output[:, :, 0:2, :]), axis=2)
+
+    # [t, c, h, w]
+    truth = uv[0:1001, :, :, :]
+
+    # [101, 2, 131, 131]
+    truth = np.concatenate((truth[:, :, :, -1:], truth, truth[:, :, :, 0:2]), axis=3)
+    truth = np.concatenate((truth[:, :, -1:, :], truth, truth[:, :, 0:2, :]), axis=2)
+
+    # post-process
+    ten_true = []
+    ten_pred = []
+    for i in range(0, 50):
+        u_star, u_pred, v_star, v_pred = post_process(output, truth, num=20 * i)
+
+        ten_true.append([u_star, v_star])
+        ten_pred.append([u_pred, v_pred])
+
+    # compute the error
+    error = frobenius_norm(np.array(ten_pred) - np.array(ten_true)) / frobenius_norm(
+        np.array(ten_true)
+    )
+
+    print("The predicted error is: ", error)
+
+    u_pred = output[:-1, 0, :, :].detach().cpu().numpy()
+    u_pred = np.swapaxes(u_pred, 1, 2)  # [h,w] = [y,x]
+    u_true = truth[:, 0, :, :]
+
+    t_true = np.linspace(0, 2, 1001)
+    t_pred = np.linspace(0, 2, time_steps)
+
+    plt.plot(t_pred, u_pred[:, 32, 32], label="x=32, y=32, CRL")
+    plt.plot(t_true, u_true[:, 32, 32], "--", label="x=32, y=32, Ref.")
+    plt.xlabel("t")
+    plt.ylabel("u")
+    plt.xlim(0, 2)
+    plt.legend()
+    plt.savefig(fig_save_path + "x=32,y=32.png")
+    plt.close("all")
+
+    # # plot train loss
+    # plt.figure()
+    # plt.plot(train_loss, label="train loss")
+    # plt.yscale("log")
+    # plt.legend()
+    # plt.savefig(fig_save_path + "train loss.png", dpi=300)

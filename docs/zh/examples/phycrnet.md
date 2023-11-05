@@ -125,7 +125,7 @@ examples/phycrnet/main.py
 
 ## 5. 结果展示
 
-PhyCRNet 案例针对 epoch=200 和 learning\_rate=1e-4 的参数配置进行了实验，结果返回Loss为 17.86。
+PhyCRNet 案例针对 epoch=2000 和 learning\_rate=1e-4 的参数配置进行了实验，结果返回Loss为 17.86。
 
 ## 6. 参考资料
 

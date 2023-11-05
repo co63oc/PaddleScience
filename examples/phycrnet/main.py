@@ -17,182 +17,12 @@ PhyCRNet for solving spatiotemporal PDEs
 Reference: https://github.com/isds-neu/PhyCRNet/
 """
 import functions
-import matplotlib.pyplot as plt
-import numpy as np
 import paddle
 import scipy.io as scio
 
 import ppsci
-from ppsci.arch import phycrnet
 from ppsci.utils import config
 from ppsci.utils import logger
-
-
-# transform
-def transform_in(input):
-    shape = input["initial_state_shape"][0]
-    input_transformed = {
-        "initial_state": input["initial_state"][0].reshape(shape.tolist()),
-        "input": input["input"][0],
-    }
-    return input_transformed
-
-
-def transform_out(input, out, model):
-    # Stop the transform.
-    model.enable_transform = False
-    global dt, dx
-    global num_time_batch
-
-    loss_func = phycrnet.loss_generator(dt, dx)
-    batch_loss = 0
-    state_detached = []
-    prev_output = []
-    for time_batch_id in range(num_time_batch):
-        # update the first input for each time batch
-        if time_batch_id == 0:
-            hidden_state = input["initial_state"]
-            u0 = input["input"]
-        else:
-            hidden_state = state_detached
-            u0 = prev_output[-2:-1].detach()  # second last output
-            out = model({"initial_state": hidden_state, "input": u0})
-
-        # output is a list
-        output = out["outputs"]
-        second_last_state = out["second_last_state"]
-
-        # [t, c, height (Y), width (X)]
-        output = paddle.concat(tuple(output), axis=0)
-
-        # concatenate the initial state to the output for central diff
-        output = paddle.concat((u0.cuda(), output), axis=0)
-
-        # get loss
-        loss = functions.compute_loss(output, loss_func)
-        # loss.backward(retain_graph=True)
-        batch_loss += loss
-
-        # update the state and output for next batch
-        prev_output = output
-        state_detached = []
-        for i in range(len(second_last_state)):
-            (h, c) = second_last_state[i]
-            state_detached.append((h.detach(), c.detach()))  # hidden state
-
-    model.enable_transform = True
-    return {"loss": batch_loss}
-
-
-def tranform_output_val(input, out):
-    global uv
-    output = out["outputs"]
-    input = input["input"]
-
-    # shape: [t, c, h, w]
-    output = paddle.concat(tuple(output), axis=0)
-    output = paddle.concat((input.cuda(), output), axis=0)
-
-    # Padding x and y axis due to periodic boundary condition
-    output = paddle.concat((output[:, :, :, -1:], output, output[:, :, :, 0:2]), axis=3)
-    output = paddle.concat((output[:, :, -1:, :], output, output[:, :, 0:2, :]), axis=2)
-
-    # [t, c, h, w]
-    truth = uv[0:1001, :, :, :]
-
-    # [101, 2, 131, 131]
-    truth = np.concatenate((truth[:, :, :, -1:], truth, truth[:, :, :, 0:2]), axis=3)
-    truth = np.concatenate((truth[:, :, -1:, :], truth, truth[:, :, 0:2, :]), axis=2)
-
-    # post-process
-    ten_true = []
-    ten_pred = []
-    for i in range(0, 50):
-        u_star, u_pred, v_star, v_pred = functions.post_process(
-            output,
-            truth,
-            num=20 * i,
-        )
-
-        ten_true.append([u_star, v_star])
-        ten_pred.append([u_pred, v_pred])
-
-    # compute the error
-    error = functions.frobenius_norm(
-        np.array(ten_pred) - np.array(ten_true)
-    ) / functions.frobenius_norm(np.array(ten_true))
-    return {"loss": paddle.to_tensor([error])}
-
-
-def train_loss_func(result_dict, *args) -> paddle.Tensor:
-    return result_dict["loss"]
-
-
-def val_loss_func(result_dict, *args) -> paddle.Tensor:
-    return result_dict["loss"]
-
-
-def output_graph(model, input_dataset, fig_save_path):
-    output_dataset = model(input_dataset)
-    output = output_dataset["outputs"]
-    input = input_dataset["input"][0]
-
-    # shape: [t, c, h, w]
-    output = paddle.concat(tuple(output), axis=0)
-    output = paddle.concat((input.cuda(), output), axis=0)
-
-    # Padding x and y axis due to periodic boundary condition
-    output = paddle.concat((output[:, :, :, -1:], output, output[:, :, :, 0:2]), axis=3)
-    output = paddle.concat((output[:, :, -1:, :], output, output[:, :, 0:2, :]), axis=2)
-
-    # [t, c, h, w]
-    truth = uv[0:1001, :, :, :]
-
-    # [101, 2, 131, 131]
-    truth = np.concatenate((truth[:, :, :, -1:], truth, truth[:, :, :, 0:2]), axis=3)
-    truth = np.concatenate((truth[:, :, -1:, :], truth, truth[:, :, 0:2, :]), axis=2)
-
-    # post-process
-    ten_true = []
-    ten_pred = []
-    for i in range(0, 50):
-        u_star, u_pred, v_star, v_pred = functions.post_process(
-            output, truth, num=20 * i
-        )
-
-        ten_true.append([u_star, v_star])
-        ten_pred.append([u_pred, v_pred])
-
-    # compute the error
-    error = functions.frobenius_norm(
-        np.array(ten_pred) - np.array(ten_true)
-    ) / functions.frobenius_norm(np.array(ten_true))
-
-    print("The predicted error is: ", error)
-
-    u_pred = output[:-1, 0, :, :].detach().cpu().numpy()
-    u_pred = np.swapaxes(u_pred, 1, 2)  # [h,w] = [y,x]
-    u_true = truth[:, 0, :, :]
-
-    t_true = np.linspace(0, 2, 1001)
-    t_pred = np.linspace(0, 2, time_steps)
-
-    plt.plot(t_pred, u_pred[:, 32, 32], label="x=32, y=32, CRL")
-    plt.plot(t_true, u_true[:, 32, 32], "--", label="x=32, y=32, Ref.")
-    plt.xlabel("t")
-    plt.ylabel("u")
-    plt.xlim(0, 2)
-    plt.legend()
-    plt.savefig(fig_save_path + "x=32,y=32.png")
-    plt.close("all")
-
-    # # plot train loss
-    # plt.figure()
-    # plt.plot(train_loss, label="train loss")
-    # plt.yscale("log")
-    # plt.legend()
-    # plt.savefig(fig_save_path + "train loss.png", dpi=300)
-
 
 if __name__ == "__main__":
     args = config.parse_args()
@@ -236,11 +66,11 @@ if __name__ == "__main__":
         effective_step=effective_step,
     )
 
-    def transform_out_wrap(_in, _out):
-        return transform_out(_in, _out, model)
+    def _transform_out(_in, _out):
+        return functions.transform_out(_in, _out, model)
 
-    model.register_input_transform(transform_in)
-    model.register_output_transform(transform_out_wrap)
+    model.register_input_transform(functions.transform_in)
+    model.register_output_transform(_transform_out)
 
     # use burgers_data.py to generate data
     data_file = "./output/burgers_1501x2x128x128.mat"
@@ -268,7 +98,7 @@ if __name__ == "__main__":
                 "label": label_dict_train,
             },
         },
-        ppsci.loss.FunctionalLoss(train_loss_func),
+        ppsci.loss.FunctionalLoss(functions.train_loss_func),
         {
             "loss": lambda out: out["loss"],
         },
@@ -284,7 +114,7 @@ if __name__ == "__main__":
                 "label": label_dict_val,
             },
         },
-        ppsci.loss.FunctionalLoss(val_loss_func),
+        ppsci.loss.FunctionalLoss(functions.val_loss_func),
         {
             "loss": lambda out: out["loss"],
         },
@@ -323,7 +153,7 @@ if __name__ == "__main__":
         # train model
         solver.train()
         # evaluate after finished training
-        model.register_output_transform(tranform_output_val)
+        model.register_output_transform(functions.tranform_output_val)
         solver.eval()
 
         # save the model
@@ -338,4 +168,4 @@ if __name__ == "__main__":
         layer_state_dict = paddle.load("output/phycrnet.pdparams")
         model.set_state_dict(layer_state_dict)
         model.register_output_transform(None)
-        output_graph(model, input_dict_val, fig_save_path)
+        functions.output_graph(model, input_dict_val, fig_save_path, time_steps)
