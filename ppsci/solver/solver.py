@@ -16,9 +16,7 @@ from __future__ import annotations
 
 import contextlib
 import itertools
-import os
 import sys
-from typing import Any
 from typing import Callable
 from typing import Dict
 from typing import Mapping
@@ -41,7 +39,6 @@ from typing_extensions import Literal
 
 import ppsci
 from ppsci.loss import mtl
-from ppsci.utils import config
 from ppsci.utils import expression
 from ppsci.utils import logger
 from ppsci.utils import misc
@@ -78,7 +75,7 @@ class Solver:
         amp_level (Literal["O1", "O2", "O0"], optional): AMP level. Defaults to "O0".
         pretrained_model_path (Optional[str]): Pretrained model path. Defaults to None.
         checkpoint_path (Optional[str]): Checkpoint path. Defaults to None.
-        compute_metric_by_batch (bool, optional): Whether calculate metrics after each batch during evaluate. Defaults to False.
+        compute_metric_by_batch (bool, optional): Whether calculate metrics after each batch during evaluation. Defaults to False.
         eval_with_no_grad (bool, optional): Whether set `stop_gradient=True` for every Tensor if no differentiation
             involved during computation, generally for save GPU memory and accelerate computing. Defaults to False.
         to_static (bool, optional): Whether enable to_static for forward pass. Defaults to False.
@@ -170,7 +167,7 @@ class Solver:
         self.start_eval_epoch = start_eval_epoch
         self.eval_freq = eval_freq
 
-        # initialize traning log recorder for loss, time cost, metric, etc.
+        # initialize training log recorder for loss, time cost, metric, etc.
         self.train_output_info: Dict[str, misc.AverageMeter] = {}
         self.train_time_info = {
             "batch_cost": misc.AverageMeter("batch_cost", ".5f", postfix="s"),
@@ -232,7 +229,7 @@ class Solver:
         self.amp_level = amp_level
         self.scaler = amp.GradScaler(True) if self.use_amp else None
 
-        # whether calculate metrics after each batch during evaluate
+        # whether calculate metrics by each batch during evaluation, mainly for memory efficiency
         self.compute_metric_by_batch = compute_metric_by_batch
         if validator is not None:
             for metric in itertools.chain(
@@ -244,7 +241,7 @@ class Solver:
                         f"{compute_metric_by_batch} when compute_metric_by_batch="
                         f"{compute_metric_by_batch}."
                     )
-        # whether set `stop_gradient=True` for every Tensor if no differentiation involved during computation
+        # whether set `stop_gradient=True` for every Tensor if no differentiation involved during evaluation
         self.eval_with_no_grad = eval_with_no_grad
 
         # load pretrained model, usually used for transfer learning
@@ -289,6 +286,8 @@ class Solver:
             # TODO(sensen): support different kind of DistributedStrategy
             fleet.init(is_collective=True)
             self.model = fleet.distributed_model(self.model)
+            self.model.input_keys = self.model._layers.input_keys
+            self.model.output_keys = self.model._layers.output_keys
             if self.optimizer is not None:
                 self.optimizer = fleet.distributed_optimizer(self.optimizer)
             logger.warning(
@@ -309,7 +308,7 @@ class Solver:
 
         self.forward_helper = expression.ExpressionSolver()
 
-        # whether enable static for forward pass, default to Fals
+        # whether enable static for forward pass, defaults to False
         jit.enable_to_static(to_static)
         logger.info(f"Set to_static={to_static} for forward computation.")
 
@@ -347,95 +346,6 @@ class Solver:
 
         if self.visualizer:
             convert_expr(self.visualizer)
-
-    @staticmethod
-    def from_config(cfg: Dict[str, Any]) -> Solver:
-        """Initialize solver from given config.
-
-        Args:
-            cfg (Dict[str, Any]): Dict config, e.g. AttrDict parsed from yaml.
-
-        Returns:
-            Solver: Initialized solver object.
-        """
-        config.print_config(cfg)
-        # TODO(sensen): sanity check for config
-        output_dir = cfg["Global"]["output_dir"]
-        epochs = cfg["Global"]["epochs"]
-        iters_per_epoch = cfg["Global"]["iters_per_epoch"]
-        save_freq = cfg["Global"]["save_freq"]
-        eval_during_train = cfg["Global"]["eval_during_train"]
-        eval_freq = cfg["Global"]["eval_freq"]
-
-        seed = cfg["Global"].get("seed", 42)
-        rank = dist.get_rank()
-        misc.set_random_seed(seed + rank)
-
-        model = ppsci.arch.build_model(cfg["Arch"])
-        geom = ppsci.geometry.build_geometry(cfg.get("Geometry", None))
-        equation = ppsci.equation.build_equation(cfg.get("Equation", None))
-        constraint = ppsci.constraint.build_constraint(
-            cfg["Global"].get("Constraint", None),
-            equation,
-            geom,
-        )
-        optimizer, lr_scheduler = ppsci.optimizer.build_optimizer(
-            cfg["Global"]["Optimizer"],
-            model + ([eq for eq in equation.values()] if equation is not None else []),
-            epochs,
-            iters_per_epoch,
-        )
-
-        vdl_writer = None
-        if cfg["Global"].get("vdl_writer", False):
-            vdl_writer_path = os.path.join(output_dir, "vdl")
-            os.makedirs(vdl_writer_path, exist_ok=True)
-            vdl_writer = vdl.LogWriter(vdl_writer_path)
-
-        log_freq = cfg["Global"].get("log_freq", 10)
-        device = cfg["Global"].get("device", "gpu")
-        validator = ppsci.validate.build_validator(
-            cfg.get("Validator", None), equation, geom
-        )
-        visualizer = ppsci.visualize.build_visualizer(cfg.get("Visualizer", None))
-        use_amp = "AMP" in cfg
-        amp_level = cfg["AMP"].pop("level", "O1").upper() if use_amp else "O0"
-
-        start_eval_epoch = cfg["Global"].get("start_eval_epoch", 1)
-        update_freq = cfg["Global"].get("update_freq", 1)
-        pretrained_model_path = cfg["Global"].get("pretrained_model_path", None)
-        checkpoint_path = cfg["Global"].get("checkpoint_path", None)
-        compute_metric_by_batch = cfg["Global"].get("compute_metric_by_batch", False)
-        eval_with_no_grad = cfg["Global"].get("eval_with_no_grad", False)
-
-        return Solver(
-            model,
-            constraint,
-            output_dir,
-            optimizer,
-            lr_scheduler,
-            epochs,
-            iters_per_epoch,
-            update_freq,
-            save_freq,
-            log_freq,
-            eval_during_train,
-            start_eval_epoch,
-            eval_freq,
-            seed,
-            vdl_writer,
-            device,
-            equation,
-            geom,
-            validator,
-            visualizer,
-            use_amp,
-            amp_level,
-            pretrained_model_path,
-            checkpoint_path,
-            compute_metric_by_batch,
-            eval_with_no_grad,
-        )
 
     def train(self):
         """Training."""
@@ -635,7 +545,7 @@ class Solver:
                     key: misc.all_gather(value) for key, value in pred_dict.items()
                 }
 
-                # rearange predictions as the same order of input_dict according to inverse
+                # rearrange predictions as the same order of input_dict according to inverse
                 # permutation, then discard predictions of padding data at the end
                 perm = np.arange(num_samples_pad, dtype="int64")
                 perm = np.concatenate(

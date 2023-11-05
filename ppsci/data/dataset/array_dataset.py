@@ -64,7 +64,7 @@ class NamedArrayDataset(io.Dataset):
 
         if self.transforms is not None:
             input_item, label_item, weight_item = self.transforms(
-                (input_item, label_item, weight_item)
+                input_item, label_item, weight_item
             )
 
         return (input_item, label_item, weight_item)
@@ -118,7 +118,10 @@ class IterableNamedArrayDataset(io.IterableDataset):
 
     def __iter__(self):
         if callable(self.transforms):
-            yield self.transforms(self.input), self.label, self.weight
+            input_, label_, weight_ = self.transforms(
+                self.input, self.label, self.weight
+            )
+            yield input_, label_, weight_
         else:
             yield self.input, self.label, self.weight
 
