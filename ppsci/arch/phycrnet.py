@@ -72,7 +72,7 @@ def initialize_weights(module):
 
 
 class PhyCRNet(base.Arch):
-    """Physics-informed convolutional-recurrent neural networks
+    """Physics-informed convolutional-recurrent neural networks.
 
     Args:
         input_channels (int): The input channels.
@@ -244,11 +244,13 @@ class ConvLSTMCell(nn.Layer):
 
         self.input_channels = input_channels
         self.hidden_channels = hidden_channels
-        self.hidden_kernel_size = hidden_kernel_size  # Page 9
+        self.hidden_kernel_size = hidden_kernel_size  # Page 9, The convolutional operations in ConvLSTM have 3x3 kernels.
         self.input_kernel_size = input_kernel_size
         self.input_stride = input_stride
         self.input_padding = input_padding
-        self.num_features = num_features  # Page 10
+        self.num_features = (
+            num_features  # Page 10, block of different dense layers {4, 3, 4}
+        )
 
         # padding for hidden state
         self.padding = int((self.hidden_kernel_size - 1) / 2)

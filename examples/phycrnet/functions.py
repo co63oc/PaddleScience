@@ -22,6 +22,10 @@ import paddle.nn as nn
 
 from ppsci.arch import phycrnet
 
+dt = None
+dx = None
+num_time_batch = None
+uv = None
 
 # transform
 def transform_in(input):
@@ -34,10 +38,8 @@ def transform_in(input):
 
 
 def transform_out(input, out, model):
-    # Stop the transform.
+    # Stop the transform to avoid circulation
     model.enable_transform = False
-    global dt, dx
-    global num_time_batch
 
     loss_func = phycrnet.loss_generator(dt, dx)
     batch_loss = 0
@@ -65,7 +67,6 @@ def transform_out(input, out, model):
 
         # get loss
         loss = compute_loss(output, loss_func)
-        # loss.backward(retain_graph=True)
         batch_loss += loss
 
         # update the state and output for next batch
@@ -80,7 +81,6 @@ def transform_out(input, out, model):
 
 
 def tranform_output_val(input, out):
-    global uv
     output = out["outputs"]
     input = input["input"]
 
@@ -120,6 +120,14 @@ def tranform_output_val(input, out):
 
 
 def train_loss_func(result_dict, *args) -> paddle.Tensor:
+    """For model calculation of loss.
+
+    Args:
+        result_dict (Dict[str, paddle.Tensor]): The result dict.
+
+    Returns:
+        paddle.Tensor: Loss value.
+    """
     return result_dict["loss"]
 
 
@@ -258,10 +266,6 @@ def compute_loss(output, loss_func):
     return loss
 
 
-def count_parameters(model):
-    return sum(p.numel() for p in model.parameters() if not p.stop_gradient)
-
-
 def post_process(output, true, num):
     """
     num: Number of time step
@@ -298,7 +302,7 @@ class Dataset:
         }
         label_dict_val = {"dummy_loss": []}
         for i in range(epochs):
-            # paddle not support rand >=7, so reshape, and then recover in input_transform
+            # paddle not support rank >=7, so reshape and then recover in input_transform
             shape = self.initial_state.shape
             input_dict_train["initial_state"].append(self.initial_state.reshape((-1,)))
             input_dict_train["initial_state_shape"].append(paddle.to_tensor(shape))

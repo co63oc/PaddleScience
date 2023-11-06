@@ -16,7 +16,6 @@
 PhyCRNet for solving spatiotemporal PDEs
 Reference: https://github.com/isds-neu/PhyCRNet/
 """
-
 import os
 from os import path as osp
 
@@ -40,11 +39,9 @@ def train(cfg: DictConfig):
     num_convlstm = 1
     (h0, c0) = (paddle.randn((1, 128, 16, 16)), paddle.randn((1, 128, 16, 16)))
     initial_state = []
-    for i in range(num_convlstm):
+    for _ in range(num_convlstm):
         initial_state.append((h0, c0))
 
-    global num_time_batch
-    global uv, dt, dx
     # grid parameters
     time_steps = cfg.TIME_STEPS
     dx = cfg.DX[0] / cfg.DX[1]
@@ -52,6 +49,10 @@ def train(cfg: DictConfig):
     steps = cfg.TIME_BATCH_SIZE + 1
     effective_step = list(range(0, steps))
     num_time_batch = int(time_steps / cfg.TIME_BATCH_SIZE)
+
+    functions.dt = cfg.DT
+    functions.dx = dx
+    functions.num_time_batch = num_time_batch
     model = ppsci.arch.PhyCRNet(
         dt=cfg.DT, step=steps, effective_step=effective_step, **cfg.MODEL
     )
@@ -65,19 +66,18 @@ def train(cfg: DictConfig):
     # use Burgers_2d_solver_HighOrder.py to generate data
     data = scio.loadmat(cfg.DATA_PATH)
     uv = data["uv"]  # [t,c,h,w]
-
-    # initial condition
-    uv0 = uv[0:1, ...]
-    input = paddle.to_tensor(uv0, dtype=paddle.get_default_dtype())
-
-    initial_state = paddle.to_tensor(initial_state)
-    dataset_obj = functions.Dataset(initial_state, input)
+    functions.uv = uv
     (
         input_dict_train,
         label_dict_train,
         input_dict_val,
         label_dict_val,
-    ) = dataset_obj.get(200)
+    ) = functions.Dataset(
+        paddle.to_tensor(initial_state),
+        paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
+    ).get(
+        10
+    )
 
     sup_constraint_pde = ppsci.constraint.SupervisedConstraint(
         {
@@ -139,16 +139,9 @@ def train(cfg: DictConfig):
     solver.eval()
 
     # save the model
+    checkpoint_path = os.path.join(cfg.output_dir, "phycrnet.pdparams")
     layer_state_dict = model.state_dict()
-    paddle.save(layer_state_dict, cfg.TRAIN.checkpoint_path)
-
-    fig_save_path = cfg.output_dir
-    if not os.path.exists(fig_save_path):
-        os.makedirs(fig_save_path, True)
-    layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
-    model.set_state_dict(layer_state_dict)
-    model.register_output_transform(None)
-    functions.output_graph(model, input_dict_val, fig_save_path, time_steps)
+    paddle.save(layer_state_dict, checkpoint_path)
 
 
 def evaluate(cfg: DictConfig):
@@ -161,11 +154,9 @@ def evaluate(cfg: DictConfig):
     num_convlstm = 1
     (h0, c0) = (paddle.randn((1, 128, 16, 16)), paddle.randn((1, 128, 16, 16)))
     initial_state = []
-    for i in range(num_convlstm):
+    for _ in range(num_convlstm):
         initial_state.append((h0, c0))
 
-    global num_time_batch
-    global uv, dt, dx
     # grid parameters
     time_steps = cfg.TIME_STEPS
     dx = cfg.DX[0] / cfg.DX[1]
@@ -173,6 +164,10 @@ def evaluate(cfg: DictConfig):
     steps = cfg.TIME_BATCH_SIZE + 1
     effective_step = list(range(0, steps))
     num_time_batch = int(time_steps / cfg.TIME_BATCH_SIZE)
+
+    functions.dt = cfg.DT
+    functions.dx = dx
+    functions.num_time_batch = num_time_batch
     model = ppsci.arch.PhyCRNet(
         dt=cfg.DT, step=steps, effective_step=effective_step, **cfg.MODEL
     )
@@ -186,27 +181,16 @@ def evaluate(cfg: DictConfig):
     # use Burgers_2d_solver_HighOrder.py to generate data
     data = scio.loadmat(cfg.DATA_PATH)
     uv = data["uv"]  # [t,c,h,w]
-
-    # initial condition
-    uv0 = uv[0:1, ...]
-    input = paddle.to_tensor(uv0, dtype=paddle.get_default_dtype())
-
-    initial_state = paddle.to_tensor(initial_state)
-    dataset_obj = functions.Dataset(initial_state, input)
-    (
-        _,
-        _,
-        input_dict_val,
-        _,
-    ) = dataset_obj.get(200)
-
-    fig_save_path = cfg.output_dir
-    if not os.path.exists(fig_save_path):
-        os.makedirs(fig_save_path, True)
-    layer_state_dict = paddle.load(cfg.TRAIN.checkpoint_path)
+    functions.uv = uv
+    _, _, input_dict_val, _ = functions.Dataset(
+        paddle.to_tensor(initial_state),
+        paddle.to_tensor(uv[0:1, ...], dtype=paddle.get_default_dtype()),
+    ).get(10)
+    checkpoint_path = os.path.join(cfg.output_dir, "phycrnet.pdparams")
+    layer_state_dict = paddle.load(checkpoint_path)
     model.set_state_dict(layer_state_dict)
     model.register_output_transform(None)
-    functions.output_graph(model, input_dict_val, fig_save_path, cfg.TIME_STEPS)
+    functions.output_graph(model, input_dict_val, cfg.output_dir, cfg.TIME_STEPS)
 
 
 @hydra.main(version_base=None, config_path="./conf", config_name="phycrnet.yaml")
