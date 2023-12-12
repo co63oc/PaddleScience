@@ -6,11 +6,11 @@
 
     ``` sh
     # linux
-    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5
-    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5
+    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5 -P ./datasets/
+    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5 -P ./datasets/
     # windows
-    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5 --output cylinder_training.hdf5
-    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5 --output cylinder_valid.hdf5
+    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5 --output ./datasets/cylinder_training.hdf5
+    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5 --output ./datasets/cylinder_valid.hdf5
     python train_enn.py
     python train_transformer.py
     ```
@@ -19,14 +19,18 @@
 
     ``` sh
     # linux
-    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5
-    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5
+    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5 -P ./datasets/
+    wget https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5 -P ./datasets/
     # windows
-    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5 --output cylinder_training.hdf5
-    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5 --output cylinder_valid.hdf5
+    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_training.hdf5 --output ./datasets/cylinder_training.hdf5
+    # curl https://paddle-org.bj.bcebos.com/paddlescience/datasets/transformer_physx/cylinder_valid.hdf5 --output ./datasets/cylinder_valid.hdf5
     python train_enn.py mode=eval EVAL.pretrained_model_path=https://paddle-org.bj.bcebos.com/paddlescience/models/cylinder/cylinder_pretrained.pdparams
-    python train_transformer.py mode=eval EVAL.pretrained_model_path=https://paddle-org.bj.bcebos.com/paddlescience/models/cylinder/cylinder_transformer_pretrained.pdparams
+    python train_transformer.py mode=eval EVAL.pretrained_model_path=https://paddle-org.bj.bcebos.com/paddlescience/models/cylinder/cylinder_transformer_pretrained.pdparams EMBEDDING_MODEL_PATH=https://paddle-org.bj.bcebos.com/paddlescience/models/cylinder/cylinder_pretrained.pdparams
     ```
+
+| 模型 | MSE |
+| :-- | :-- |
+| [cylinder_transformer_pretrained.pdparams](https://paddle-org.bj.bcebos.com/paddlescience/models/cylinder/cylinder_transformer_pretrained.pdparams) | 1.093 |
 
 ## 1. 背景简介
 
@@ -245,9 +249,9 @@ examples/cylinder/2d_unsteady/transformer_physx/train_enn.py:153:169
 
 上文介绍了如何构建 Embedding 模型的训练、评估，在本节中将介绍如何使用训练好的 Embedding 模型训练 Transformer 模型。因为训练 Transformer 模型的步骤与训练 Embedding 模型的步骤基本相似，因此本节在两者的重复部分的各个参数不再详细介绍。首先将代码中定义的各个参数变量展示如下，每个参数的具体含义会在下面使用到时进行解释。
 
-``` yaml linenums="26" title="examples/cylinder/2d_unsteady/transformer_physx/conf/transformer.yaml"
+``` yaml linenums="23" title="examples/cylinder/2d_unsteady/transformer_physx/conf/transformer.yaml"
 --8<--
-examples/cylinder/2d_unsteady/transformer_physx/conf/transformer.yaml:26:33
+examples/cylinder/2d_unsteady/transformer_physx/conf/transformer.yaml:23:34
 --8<--
 ```
 

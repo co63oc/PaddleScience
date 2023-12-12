@@ -46,8 +46,13 @@ def train(cfg: DictConfig):
     data_funcs = func_module.DataFuncs(cfg.TILE_RATIO)
 
     # load dataset
+    logger.message(
+        "Attention! Start loading datasets, this will take tens of seconds to several minutes, please wait patiently."
+    )
     dataset_train = hdf5storage.loadmat(cfg.DATASET_PATH)
+    logger.message("Finish loading training dataset.")
     dataset_valid = hdf5storage.loadmat(cfg.DATASET_PATH_VALID)
+    logger.message("Finish loading validation dataset.")
 
     # define Generator model
     model_gen = ppsci.arch.Generator(**cfg.MODEL.gen_net)
@@ -98,7 +103,6 @@ def train(cfg: DictConfig):
                     "density_low": dataset_train["density_low"],
                     "density_high": dataset_train["density_high"],
                 },
-                "label": {"density_high": dataset_train["density_high"]},
                 "transforms": (
                     {
                         "FunctionalTransform": {
@@ -115,6 +119,10 @@ def train(cfg: DictConfig):
             },
         },
         ppsci.loss.FunctionalLoss(gen_funcs.loss_func_gen),
+        {
+            "output_gen": lambda out: out["output_gen"],
+            "density_high": lambda out: out["density_high"],
+        },
         name="sup_constraint_gen",
     )
     constraint_gen = {sup_constraint_gen.name: sup_constraint_gen}
@@ -127,7 +135,6 @@ def train(cfg: DictConfig):
                         "density_low": dataset_train["density_low_tempo"],
                         "density_high": dataset_train["density_high_tempo"],
                     },
-                    "label": {"density_high": dataset_train["density_high_tempo"]},
                     "transforms": (
                         {
                             "FunctionalTransform": {
@@ -144,6 +151,10 @@ def train(cfg: DictConfig):
                 },
             },
             ppsci.loss.FunctionalLoss(gen_funcs.loss_func_gen_tempo),
+            {
+                "output_gen": lambda out: out["output_gen"],
+                "density_high": lambda out: out["density_high"],
+            },
             name="sup_constraint_gen_tempo",
         )
         constraint_gen[sup_constraint_gen_tempo.name] = sup_constraint_gen_tempo
